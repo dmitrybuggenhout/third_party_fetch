@@ -1,6 +1,7 @@
 import requests
 import re
 from bs4 import BeautifulSoup
+import os
 from os import listdir
 from os.path import isfile, join, isdir
 
@@ -21,22 +22,11 @@ def is_somko_module(folder_name):
             return False
     return folder_name
 
-all_modules = [f for f in listdir(DIR_PATH) if isdir(join(DIR_PATH, f))]
-all_modules_no_somko = list(filter(is_somko_module, all_modules))
-
-found_modules = []
-found_temp = []
-not_found_modules = []
-
-# send requests for all modules and check if they exist
-for module in all_modules_no_somko:
-    print(f"Searching for {module}")
-    not_found_modules = all_modules_no_somko
-    
-    # Version finding
-    local_version = "no version" 
+def get_version(module_name):
+    local_version = "no version"
     try:
-        with open(f'{DIR_PATH}/{module}/__manifest__.py', 'r') as man:
+        manifest_path = os.path.join(DIR_PATH, module_name, '__manifest__.py')
+        with open(manifest_path, 'r') as man:
             lines = man.readlines()
             version_line = ''
             for line in lines:
@@ -46,6 +36,22 @@ for module in all_modules_no_somko:
             local_version = version_number[0]
     except:
         print(f"No manifest file for {module}")
+
+    return local_version
+
+all_modules = [f for f in listdir(DIR_PATH) if isdir(join(DIR_PATH, f))]
+all_modules_no_somko = list(filter(is_somko_module, all_modules))
+somko_modules = [m for m in all_modules if m not in all_modules_no_somko]
+
+modules_info = []
+not_found_modules_info = []
+
+# send requests for all modules and check if they exist
+for module in all_modules_no_somko:
+    print(f"Searching for {module}")
+    
+    # Version finding
+    local_version = get_version(module)
 
     # Check for existance and gather info
     for version in POSSIBLE_VERSIONS:
@@ -70,22 +76,32 @@ for module in all_modules_no_somko:
 
             # [MODULE_NAME, FULL_URL, VERSION, COST, local_version]
             info = [module, url, version, price, local_version]
-            found_modules.append(info)
-            found_temp.append(module)
-            not_found_modules = [m for m in all_modules_no_somko if m not in found_temp]
+            modules_info.append(info)
             break
+    else:
+        info = [module, '-', '-', '-', local_version]
+        not_found_modules_info.append(info)
 
     # sort on price
-    found_modules.sort(key=lambda m: m[3])
+    modules_info.sort(key=lambda m: m[3])
 
+# append not found modules
+for module in not_found_modules_info:
+    modules_info.append(module)
+
+# append somko modules
+for module in somko_modules:
+    local_version = get_version(module)
+    info = [f'{module}', '-', '-', '-', local_version]
+    modules_info.append(info)
 
 # csv format
 with open(FILE_OUT_NAME + '.csv', "w") as out_file:
-    top_row = ['Name:', 'Available Version', 'Local Version', 'Price']
+    top_row = ['Name', 'Available Version', 'Local Version', 'Price', 'Note']
     rows = [top_row]
 
 
-    for module in found_modules:
+    for module in modules_info:
         row = [f'=HYPERLINK("{module[1]}", "{module[0]}")', f'{module[2]}', f'{module[4]}', f'{module[3]}']
         rows.append(row)
 
@@ -95,12 +111,8 @@ with open(FILE_OUT_NAME + '.csv', "w") as out_file:
 
 # md format
 with open(FILE_OUT_NAME + '.md', "w") as out_file:
-    for module in found_modules:
+    for module in modules_info:
         out_file.write(f"[{module[0]}]({module[1]}) ({module[2]}) PRICE: {module[3]}")
-        out_file.write("\n\n")
-
-    for module in not_found_modules:
-        out_file.write(f"{module}: NOT FOUND")
         out_file.write("\n\n")
 
 
